@@ -1,0 +1,81 @@
+{
+  "name": "create-xeiculy-app",
+  "type": "module",
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.10.0",
+  "description": "A template for creating a frontend app with Xeiculy.",
+  "author": "XeicuLy",
+  "license": "MIT",
+  "keywords": ["nuxt", "vue"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/XeicuLy/create-xeiculy-nuxt-app.git"
+  },
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "files": ["bin", "dist"],
+  "bin": {
+    "create-xeiculy-nuxt-app": "./bin/cli.mjs"
+  },
+  "scripts": {
+    "build": "unbuild",
+    "dev": "unbuild --stub",
+    "command": "jiti bin/cli.mjs",
+    "release": "pnpm lint:fix && pnpm build && changelogen --release --push",
+    "biome": "biome check .",
+    "biome:fix": "biome check --write .",
+    "biome:ci": "biome ci .",
+    "prettier": "prettier --check .",
+    "prettier:fix": "prettier --write .",
+    "prettier:ci": "prettier --check --log-level warn .",
+    "typecheck": "tsc --noEmit",
+    "lint": "pnpm biome && pnpm prettier && pnpm typecheck",
+    "lint:fix": "pnpm biome:fix && pnpm prettier:fix && pnpm typecheck",
+    "test": "vitest",
+    "test:ui": "vitest --ui --coverage",
+    "test:ci": "vitest --run --coverage",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "citty": "0.1.6",
+    "consola": "3.4.2",
+    "giget": "2.0.0",
+    "pkg-types": "2.1.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@types/node": "22.15.17",
+    "@vitest/coverage-v8": "3.1.3",
+    "@vitest/ui": "3.1.3",
+    "changelogen": "0.6.1",
+    "eslint": "9.26.0",
+    "husky": "9.1.7",
+    "jiti": "2.4.2",
+    "lint-staged": "16.0.0",
+    "prettier": "3.5.3",
+    "typescript": "5.8.3",
+    "unbuild": "3.5.0",
+    "vitest": "3.1.3"
+  },
+  "lint-staged": {
+    "**/*.{css,js,ts,cjs,mjs,cts,mts,jsx,tsx,json,jsonc}": ["biome check --write --no-errors-on-unmatched"],
+    "**/*.{md,html,yaml,yml}": ["prettier --write"]
+  },
+  "volta": {
+    "node": "22.15.0",
+    "pnpm": "10.10.0"
+  }
+}
