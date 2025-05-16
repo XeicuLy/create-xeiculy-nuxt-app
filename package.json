@@ -3,7 +3,7 @@
   "type": "module",
   "version": "0.1.0",
   "packageManager": "pnpm@10.10.0",
-  "description": "A template for creating a frontend app with Xeiculy.",
+  "description": "A template for creating a frontend app with Xeiculy(test).",
   "author": "XeicuLy",
   "license": "MIT",
   "keywords": ["nuxt", "vue"],
