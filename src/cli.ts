@@ -11,16 +11,28 @@ import { description, name, version } from '../package.json';
 
 const DEFAULT_REGISTRY = 'https://raw.githubusercontent.com/xeikit/starter/templates/templates' as const;
 const DEFAULT_TEMPLATE_NAME = 'nuxt3' as const;
-
-const packageManager: Record<PackageManagerName, undefined> = {
+const PACKAGE_MANAGERS: Record<PackageManagerName, undefined> = {
   npm: undefined,
   yarn: undefined,
   pnpm: undefined,
   bun: undefined,
   deno: undefined,
 };
+const PACKAGE_MANAGER_OPTIONS = Object.keys(PACKAGE_MANAGERS) as PackageManagerName[];
 
-const packageManagerOptions = Object.keys(packageManager) as PackageManagerName[];
+const detectCurrentPackageManager = (): PackageManagerName | undefined => {
+  const userAgent = process.env.npm_config_user_agent;
+  if (!userAgent) {
+    return undefined;
+  }
+  const [name] = userAgent.split('/');
+  return PACKAGE_MANAGER_OPTIONS.includes(name as PackageManagerName) ? (name as PackageManagerName) : undefined;
+};
+
+const handleError = (error: Error): never => {
+  consola.error(error.toString());
+  process.exit(1);
+};
 
 const mainCommand = defineCommand({
   meta: {
@@ -58,7 +70,7 @@ const mainCommand = defineCommand({
       description: 'Package manager choice (npm, pnpm, yarn, bun, deno)',
     },
   } as const satisfies Record<string, ArgDef>,
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: <explanation>
+
   run: async ({ args }) => {
     if (hasTTY) {
       process.stdout.write('Loading...\n');
@@ -66,139 +78,166 @@ const mainCommand = defineCommand({
 
     consola.info(colors.bold('Hello XeicuLy Template App!'));
 
-    if (args.dir === '') {
-      args.dir = await consola
-        .prompt('Where would you like to create your project?', {
-          placeholder: './my-project',
-          type: 'text',
-          default: './my-project',
-          cancel: 'reject',
-        })
-        .catch(() => process.exit(1));
-    }
+    const projectDir = await getProjectDirectory(args.dir);
 
     const cwd = resolve(args.cwd);
-    const templateDownloadPath = resolve(cwd, args.dir);
+    const templateDownloadPath = resolve(cwd, projectDir);
     consola.info(
       `Creating a new project in ${colors.cyan(relative(cwd, templateDownloadPath) || templateDownloadPath)}.`,
     );
 
-    args.template = await consola
-      .prompt('Choose a template', {
-        type: 'select',
-        options: [{ label: 'Nuxt3', value: 'nuxt3' }],
-        cancel: 'reject',
-      })
-      .catch(() => process.exit(1));
+    verifyDirectoryDoesNotExist(templateDownloadPath);
 
-    const templateName = args.template || DEFAULT_TEMPLATE_NAME;
+    const templateName = await selectTemplate(args.template);
 
-    if (typeof templateName !== 'string') {
-      consola.error('Please specify a template name.');
-      process.exit(1);
-    }
+    const template = await downloadTemplateAndHandleErrors(templateName, templateDownloadPath);
 
-    const shouldVerify = existsSync(templateDownloadPath);
+    const selectedPackageManager = await selectPackageManager(args.packageManager);
 
-    if (shouldVerify) {
-      consola.error(
-        `The directory ${colors.cyan(relative(cwd, templateDownloadPath) || templateDownloadPath)} already exists. Please choose a different directory.`,
-      );
-      process.exit(1);
-    }
+    await installDependenciesIfRequested(args.install, template.dir, selectedPackageManager);
 
-    let template: DownloadTemplateResult;
-
-    try {
-      template = await downloadTemplate(templateName, {
-        dir: templateDownloadPath,
-        registry: DEFAULT_REGISTRY,
-      });
-    } catch (error) {
-      consola.error((error as Error).toString());
-      process.exit(1);
-    }
-
-    const detectCurrentPackageManager = () => {
-      const userAgent = process.env.npm_config_user_agent;
-      if (!userAgent) {
-        return;
-      }
-      const [name] = userAgent.split('/');
-      if (packageManagerOptions.includes(name as PackageManagerName)) {
-        return name as PackageManagerName;
-      }
-    };
-
-    const currentPackageManager = detectCurrentPackageManager();
-
-    const packageManagerArg = args.packageManager as PackageManagerName;
-    const packageManagerSelectOptions = packageManagerOptions.map(
-      (packageManager) =>
-        ({
-          label: packageManager,
-          value: packageManager,
-          hint: currentPackageManager === packageManager ? 'current' : undefined,
-        }) satisfies SelectPromptOptions['options'][number],
-    );
-    const selectedPackageManager = packageManagerOptions.includes(packageManagerArg)
-      ? packageManagerArg
-      : await consola
-          .prompt('Which package manager would you like to use?', {
-            type: 'select',
-            options: packageManagerSelectOptions,
-            initial: currentPackageManager,
-            cancel: 'reject',
-          })
-          .catch(() => process.exit(1));
-
-    if (args.install === false) {
-      consola.info('Skipping dependency installation.');
-    } else {
-      consola.start('Installing dependencies...');
-
-      try {
-        await installDependencies({
-          cwd: template.dir,
-          packageManager: {
-            name: selectedPackageManager,
-            command: selectedPackageManager,
-          },
-        });
-      } catch (error) {
-        consola.error((error as Error).toString());
-        process.exit(1);
-      }
-
-      consola.success('Installation completed.');
-    }
-
-    if (args.gitInit === undefined) {
-      args.gitInit = await consola
-        .prompt('Initialize git repository?', {
-          type: 'confirm',
-          cancel: 'reject',
-        })
-        .catch(() => process.exit(1));
-    }
-
-    if (args.gitInit) {
-      consola.info('Initializing git repository...\n');
-
-      try {
-        await x('git', ['init', template.dir], {
-          throwOnError: true,
-          nodeOptions: {
-            stdio: 'inherit',
-          },
-        });
-      } catch (err) {
-        consola.warn(`Failed to initialize git repository: ${err}`);
-      }
-    }
+    await initializeGitIfRequested(args.gitInit, template.dir);
 
     consola.log(`\n✨ Starter project has been created with the \`${template.source}\` template.`);
   },
 });
+
+async function getProjectDirectory(dirArg: string): Promise<string> {
+  if (dirArg !== '') {
+    return dirArg;
+  }
+
+  return consola
+    .prompt('Where would you like to create your project?', {
+      placeholder: './my-project',
+      type: 'text',
+      default: './my-project',
+      cancel: 'reject',
+    })
+    .catch(() => process.exit(1));
+}
+
+function verifyDirectoryDoesNotExist(path: string): void {
+  if (existsSync(path)) {
+    consola.error(
+      `The directory ${colors.cyan(relative(process.cwd(), path) || path)} already exists. Please choose a different directory.`,
+    );
+    process.exit(1);
+  }
+}
+
+async function selectTemplate(templateArg?: string): Promise<string> {
+  if (templateArg) {
+    return templateArg;
+  }
+
+  const template = await consola
+    .prompt('Choose a template', {
+      type: 'select',
+      options: [{ label: 'Nuxt3', value: 'nuxt3' }],
+      cancel: 'reject',
+    })
+    .catch(() => process.exit(1));
+
+  if (typeof template !== 'string') {
+    consola.error('Please specify a template name.');
+    process.exit(1);
+  }
+
+  return template || DEFAULT_TEMPLATE_NAME;
+}
+
+async function downloadTemplateAndHandleErrors(
+  templateName: string,
+  downloadPath: string,
+): Promise<DownloadTemplateResult> {
+  try {
+    return await downloadTemplate(templateName, {
+      dir: downloadPath,
+      registry: DEFAULT_REGISTRY,
+    });
+  } catch (error) {
+    return handleError(error as Error);
+  }
+}
+
+async function selectPackageManager(packageManagerArg?: string): Promise<PackageManagerName> {
+  const currentPackageManager = detectCurrentPackageManager();
+
+  if (packageManagerArg && PACKAGE_MANAGER_OPTIONS.includes(packageManagerArg as PackageManagerName)) {
+    return packageManagerArg as PackageManagerName;
+  }
+
+  const packageManagerSelectOptions = PACKAGE_MANAGER_OPTIONS.map(
+    (packageManager) =>
+      ({
+        label: packageManager,
+        value: packageManager,
+        hint: currentPackageManager === packageManager ? 'current' : undefined,
+      }) satisfies SelectPromptOptions['options'][number],
+  );
+
+  return consola
+    .prompt('Which package manager would you like to use?', {
+      type: 'select',
+      options: packageManagerSelectOptions,
+      initial: currentPackageManager,
+      cancel: 'reject',
+    })
+    .catch(() => process.exit(1));
+}
+
+async function installDependenciesIfRequested(
+  shouldInstall: boolean | undefined,
+  dir: string,
+  packageManager: PackageManagerName,
+): Promise<void> {
+  if (shouldInstall === false) {
+    consola.info('Skipping dependency installation.');
+    return;
+  }
+
+  consola.start('Installing dependencies...');
+
+  try {
+    await installDependencies({
+      cwd: dir,
+      packageManager: {
+        name: packageManager,
+        command: packageManager,
+      },
+    });
+    consola.success('Installation completed.');
+  } catch (error) {
+    handleError(error as Error);
+  }
+}
+
+async function initializeGitIfRequested(shouldInitParam: boolean | undefined, dir: string): Promise<void> {
+  const shouldInit =
+    shouldInitParam === undefined
+      ? await consola
+          .prompt('Initialize git repository?', {
+            type: 'confirm',
+            cancel: 'reject',
+          })
+          .catch(() => process.exit(1))
+      : shouldInitParam;
+
+  if (shouldInit) {
+    consola.info('Initializing git repository...\n');
+
+    try {
+      await x('git', ['init', dir], {
+        throwOnError: true,
+        nodeOptions: {
+          stdio: 'inherit',
+        },
+      });
+    } catch (err) {
+      consola.warn(`Failed to initialize git repository: ${err}`);
+    }
+  }
+}
 
 export const runMain = () => _runMain(mainCommand);
