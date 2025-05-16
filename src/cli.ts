@@ -9,7 +9,7 @@ import { hasTTY } from 'std-env';
 import { x } from 'tinyexec';
 import { description, name, version } from '../package.json';
 
-const DEFAULT_REGISTRY = 'gh:XeicuLy/create-xeiculy-nuxt-app/templates' as const;
+const DEFAULT_REGISTRY = 'https://raw.githubusercontent.com/xeikit/starter/templates/templates' as const;
 const DEFAULT_TEMPLATE_NAME = 'nuxt3' as const;
 
 const packageManager: Record<PackageManagerName, undefined> = {
@@ -110,8 +110,9 @@ const mainCommand = defineCommand({
     let template: DownloadTemplateResult;
 
     try {
-      template = await downloadTemplate(`${DEFAULT_REGISTRY}/${templateName}`, {
+      template = await downloadTemplate(templateName, {
         dir: templateDownloadPath,
+        registry: DEFAULT_REGISTRY,
       });
     } catch (error) {
       consola.error((error as Error).toString());
